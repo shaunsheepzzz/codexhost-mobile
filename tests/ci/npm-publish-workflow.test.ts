@@ -75,66 +75,11 @@ describe("npm 自动发布流水线", () => {
     expect(source).not.toContain("NPM_TOKEN");
   });
 
-  it("可信发布要用的工作流名是发起调用的那个文件，不是真正执行发布的那个", () => {
-    // npmjs.com 上 Trusted Publisher 的 Workflow filename 必须填
-    // build-android.yml——「发起调用」的那个文件，而不是真正跑 npm publish
-    // 的 publish-npm.yml。
-    //
-    // 官方文档 trusted-publishers#troubleshooting 原文：
-    //   Some GitHub Actions workflows use `workflow_call` to invoke other
-    //   workflows that run `npm publish`, or use `workflow_dispatch` for
-    //   manual publishing. When this happens, validation checks the calling
-    //   workflow's name instead of the workflow that actually contains the
-    //   publish command, which can cause configuration mismatches.
-    //
-    // 这条极容易搞反：GitHub 的 OIDC 声明里 job_workflow_ref 明明指向被调用的
-    //   unlgame/codexhost-mobile/.github/workflows/publish-npm.yml@refs/heads/main
-    // 但 npm 校验的不是它。曾经照着 job_workflow_ref 把配置改成 publish-npm.yml，
-    // 结果把本来对的配置改坏了——症状是 oidc.js 静默 return，最后只剩一个
-    // ENEEDAUTH，日志里完全看不出原因。
-    //
-    // 所以：改名 build-android.yml 之前，先去 npm 上把 Trusted Publisher 一起改掉。
-    const publishWorkflow = readWorkflow(PUBLISH_WORKFLOW);
-
-    expect(publishWorkflow.on?.workflow_call).toBeDefined();
-    expect(publishWorkflow.permissions).toMatchObject({
-      contents: "read",
-      "id-token": "write",
-    });
-
-    const buildAndroid = parse(readFileSync(BUILD_WORKFLOW, "utf8")) as {
-      jobs?: Record<
-        string,
-        {
-          uses?: string;
-          permissions?: Record<string, string>;
-          steps?: Array<{ run?: string }>;
-        }
-      >;
-    };
-
-    // 必须真的有一个 job 用 workflow_call 调 publish-npm.yml——npm 那边要填的
-    // 就是这个调用方文件的名字，两者得对得上。
-    const callers = Object.entries(buildAndroid.jobs ?? {}).filter(
-      ([, job]) => job.uses === "./.github/workflows/publish-npm.yml",
-    );
-    expect(
-      callers,
-      "build-android.yml 必须有一个 job 用 workflow_call 调 publish-npm.yml",
-    ).toHaveLength(1);
-
-    // 父工作流也要给 id-token: write，缺了同样换不到 OIDC 令牌。
-    expect(callers[0]?.[1].permissions).toMatchObject({
-      contents: "read",
-      "id-token": "write",
-    });
-
-    // 调用方自己不能执行 npm publish。真挪过去了，「调用方」和「执行方」就是
-    // 同一个文件，这条规则无从谈起，npm 那边的配置会静默失配。
-    const executedInCaller = Object.values(buildAndroid.jobs ?? {})
-      .flatMap((job) => job.steps ?? [])
-      .filter((step) => /\bnpm\s+publish\b/.test(step.run ?? ""));
-    expect(executedInCaller).toEqual([]);
+  it("mTLS 安卓构建不调用 npm 发布，fork 无发布权限", () => {
+    const caller = parse(readFileSync(BUILD_WORKFLOW, "utf8"));
+    expect(Object.values(caller.jobs).some((job: any) => job.uses?.includes("publish-npm"))).toBe(false);
+    const publish = parse(readFileSync(PUBLISH_WORKFLOW, "utf8"));
+    expect(publish.jobs.publish.if).toBe("github.repository == 'unlgame/codexhost-mobile'");
   });
 
   it("setup-node 不带 registry-url，否则可信发布被它写错令牌堵死", () => {

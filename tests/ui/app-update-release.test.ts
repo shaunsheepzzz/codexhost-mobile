@@ -15,12 +15,12 @@ const releasePayload = {
   body: "自动更新说明",
   draft: false,
   prerelease: false,
-  html_url: "https://github.com/unlgame/codexhost-mobile/releases/tag/v0.2.1",
+  html_url: "https://github.com/shaunsheepzzz/codexhost-mobile/releases/tag/v0.2.1",
   assets: [
     {
       name: "CodexHostMobile-v0.2.1.apk",
       browser_download_url:
-        "https://github.com/unlgame/codexhost-mobile/releases/download/v0.2.1/CodexHostMobile-v0.2.1.apk",
+        "https://github.com/shaunsheepzzz/codexhost-mobile/releases/download/v0.2.1/CodexHostMobile-v0.2.1.apk",
       digest:
         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       size: 12_345,
@@ -29,9 +29,17 @@ const releasePayload = {
 };
 
 describe("App 自动更新 Release 模型", () => {
+  it("默认只接受 fork 签名更新，拒绝上游及未签名产物", () => {
+    const forkPayload = structuredClone(releasePayload);
+    const upstreamPayload = JSON.parse(JSON.stringify(releasePayload).replaceAll("shaunsheepzzz/codexhost-mobile", "unlgame/codexhost-mobile"));
+    expect(parseGithubRelease(forkPayload)).not.toBeNull();
+    expect(parseGithubRelease(upstreamPayload)).toBeNull();
+    forkPayload.assets[0].name = "app-release-unsigned.apk";
+    expect(parseGithubRelease(forkPayload)).toBeNull();
+  });
   it("使用不可变的本项目 Latest Release 地址", () => {
     expect(APP_UPDATE_API_URL).toBe(
-      "https://api.github.com/repos/unlgame/codexhost-mobile/releases/latest",
+      "https://api.github.com/repos/shaunsheepzzz/codexhost-mobile/releases/latest",
     );
   });
 

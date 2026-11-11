@@ -1,171 +1,32 @@
-name: Build CodexHostMobile Android APK
+name: Build Codex Mobile mTLS Android
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "src/**"
-      - "server/**"
-      - "bin/**"
-      - "public/**"
-      - "index.html"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig*.json"
-      - "tsconfig.npm.json"
-      - "vite.config.ts"
-      - "docs/assets/app-icon/codex-mobile-app-icon-1024.png"
-      - "scripts/compose-mobile-app-icon.sh"
-      - ".github/workflows/build-android.yml"
-      - ".github/workflows/build-ios.yml"
-      - ".github/workflows/publish-npm.yml"
-      - ".github/workflows/secret-guard.yml"
   workflow_dispatch:
     inputs:
-      release_version:
-        description: Version to build; required when publishing npm
-        required: false
+      app_version:
+        description: Android version (major.minor.patch)
+        required: true
+        default: "0.2.3"
         type: string
-      publish_npm:
-        description: Also publish the npm gateway package
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
 
 concurrency:
-  group: codexhost-mobile-android-${{ github.ref }}
+  group: codex-mobile-mtls-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   APP_NAME: CodexHostMobile
-  DISPLAY_NAME: Codex Host Mobile
-  APP_ID: ai.unlgame.codexhostmobile
+  DISPLAY_NAME: Codex Mobile mTLS
+  APP_ID: io.github.shaunsheepzzz.codexhostmobile
+
 jobs:
-  version:
-    name: Resolve shared release version
-    runs-on: ubuntu-latest
-    outputs:
-      app_version: ${{ steps.version.outputs.app_version }}
-      build_ios: ${{ steps.version.outputs.build_ios }}
-      release_tag: ${{ steps.version.outputs.release_tag }}
-      publish_npm: ${{ steps.version.outputs.publish_npm }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Resolve app version
-        id: version
-        shell: bash
-        env:
-          ENABLE_IOS_BUILD: ${{ vars.ENABLE_IOS_BUILD }}
-          GH_TOKEN: ${{ github.token }}
-          PUBLISH_NPM_REQUESTED: ${{ inputs.publish_npm }}
-          REQUESTED_VERSION: ${{ inputs.release_version }}
-        run: |
-          set -euo pipefail
-          fallback="$(node -p "require('./package.json').version")"
-          requested="${REQUESTED_VERSION#v}"
-          version="$fallback"
-          if [[
-            "$GITHUB_EVENT_NAME" == "workflow_dispatch" &&
-            "$PUBLISH_NPM_REQUESTED" == "true" &&
-            -z "$requested"
-          ]]; then
-            echo "Manual npm publishing requires release_version" >&2
-            exit 1
-          fi
-          latest=""
-          if [[
-            "$GITHUB_EVENT_NAME" == "push" ||
-            (
-              "$GITHUB_EVENT_NAME" == "workflow_dispatch" &&
-              "$PUBLISH_NPM_REQUESTED" == "true"
-            )
-          ]]; then
-            if ! latest="$(
-              gh api "repos/${GITHUB_REPOSITORY}/releases/latest" \
-                --jq '.tag_name'
-            )"; then
-              if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
-                echo "Unable to resolve the latest GitHub Release for manual npm publishing" >&2
-                exit 1
-              fi
-              latest=""
-            fi
-          fi
-          next_version="$(
-            node - "$latest" "$fallback" <<'NODE'
-          const latest = process.argv[2] || "";
-          const fallback = process.argv[3];
-          const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(latest)
-            || /^v?(\d+)\.(\d+)\.(\d+)$/.exec(fallback);
-          if (!match) throw new Error(`Invalid fallback version: ${fallback}`);
-          const patch = Number(match[3]);
-          process.stdout.write(`${match[1]}.${match[2]}.${patch + 1}`);
-          NODE
-          )"
-          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
-            version="$next_version"
-          elif [[ -n "$requested" ]]; then
-            version="$requested"
-          fi
-          node -e '
-            const version = process.argv[1];
-            if (!/^\d+\.\d+\.\d+$/.test(version)) {
-              throw new Error(`Invalid release version: ${version}`);
-            }
-          ' "$version"
-          if [[
-            "$GITHUB_EVENT_NAME" == "workflow_dispatch" &&
-            "$PUBLISH_NPM_REQUESTED" == "true" &&
-            "$version" != "$next_version"
-          ]]; then
-            echo "Manual npm publishing requires the next GitHub Release patch version: $next_version" >&2
-            exit 1
-          fi
-          echo "APP_VERSION=$version" >> "$GITHUB_ENV"
-          echo "APP_VERSION_CODE=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
-          echo "app_version=$version" >> "$GITHUB_OUTPUT"
-          echo "release_tag=v$version" >> "$GITHUB_OUTPUT"
-          build_ios=true
-          if [[ "$ENABLE_IOS_BUILD" == "false" ]]; then
-            build_ios=false
-          fi
-          echo "build_ios=$build_ios" >> "$GITHUB_OUTPUT"
-          publish_npm=false
-          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
-            base="${{ github.event.before }}"
-            if [[ "$base" =~ ^0+$ ]]; then
-              base="$(git rev-list --max-parents=0 "$GITHUB_SHA")"
-            fi
-            if ! git diff --quiet "$base" "$GITHUB_SHA" -- \
-              server/ \
-              bin/ \
-              tsconfig.npm.json \
-              package.json \
-              package-lock.json \
-              .github/workflows/publish-npm.yml; then
-              publish_npm=true
-            fi
-          elif [[ "$PUBLISH_NPM_REQUESTED" == "true" ]]; then
-            publish_npm=true
-          fi
-          echo "publish_npm=$publish_npm" >> "$GITHUB_OUTPUT"
-
   build:
     name: Build CodexHostMobile Android
-    needs: version
     runs-on: ubuntu-latest
     env:
-      APP_VERSION: ${{ needs.version.outputs.app_version }}
+      APP_VERSION: ${{ inputs.app_version }}
       APP_VERSION_CODE: ${{ github.run_number }}
 
     steps:
@@ -231,8 +92,8 @@ jobs:
             "http://www.w3.org/",
             "https://github.com/remarkjs/",
             "https://github.com/syntax-tree/",
-            "https://github.com/unlgame/codexhost-mobile/releases/",
-            "https://api.github.com/repos/unlgame/codexhost-mobile/releases/",
+            "https://github.com/shaunsheepzzz/codexhost-mobile/releases/",
+            "https://api.github.com/repos/shaunsheepzzz/codexhost-mobile/releases/",
             "https://react.dev/errors/",
           ];
           const allowedUrls = new Set([
@@ -405,59 +266,6 @@ jobs:
       - name: Generate Android project
         working-directory: pakeplus
         run: pnpm pp:worker
-
-      - name: Decode release signing keystore
-        shell: bash
-        env:
-          CODEXHOST_MOBILE_KEYSTORE_BASE64: ${{ secrets.CODEXHOST_MOBILE_KEYSTORE_BASE64 }}
-          CODEXHOST_MOBILE_STORE_PASSWORD: ${{ secrets.CODEXHOST_MOBILE_STORE_PASSWORD }}
-          CODEXHOST_MOBILE_KEY_ALIAS: ${{ secrets.CODEXHOST_MOBILE_KEY_ALIAS }}
-          CODEXHOST_MOBILE_KEY_PASSWORD: ${{ secrets.CODEXHOST_MOBILE_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          missing=()
-          if [[ -z "${CODEXHOST_MOBILE_KEYSTORE_BASE64//[[:space:]]/}" ]]; then
-            missing+=("CODEXHOST_MOBILE_KEYSTORE_BASE64")
-          fi
-          if [[ -z "$CODEXHOST_MOBILE_STORE_PASSWORD" ]]; then
-            missing+=("CODEXHOST_MOBILE_STORE_PASSWORD")
-          fi
-          if [[ -z "$CODEXHOST_MOBILE_KEY_ALIAS" ]]; then
-            missing+=("CODEXHOST_MOBILE_KEY_ALIAS")
-          fi
-          if [[ -z "$CODEXHOST_MOBILE_KEY_PASSWORD" ]]; then
-            missing+=("CODEXHOST_MOBILE_KEY_PASSWORD")
-          fi
-          if (( ${#missing[@]} > 0 )); then
-            echo "::error::缺少 Android release 签名 Secret：${missing[*]}。请在仓库 Settings → Secrets and variables → Actions 配置 CODEXHOST_MOBILE_KEYSTORE_BASE64 / CODEXHOST_MOBILE_STORE_PASSWORD / CODEXHOST_MOBILE_KEY_ALIAS / CODEXHOST_MOBILE_KEY_PASSWORD" >&2
-            exit 1
-          fi
-          # GitHub 会自动 mask Secret，这里显式再加一层，避免口令出现在任何日志里
-          echo "::add-mask::$CODEXHOST_MOBILE_STORE_PASSWORD"
-          echo "::add-mask::$CODEXHOST_MOBILE_KEY_PASSWORD"
-          echo "::add-mask::$CODEXHOST_MOBILE_KEY_ALIAS"
-          keystore="$RUNNER_TEMP/codexhost-mobile.keystore"
-          rm -f "$keystore"
-          # 只解码到 $RUNNER_TEMP，绝不写入 workspace，避免被 upload-artifact 或缓存带出
-          printf '%s' "$CODEXHOST_MOBILE_KEYSTORE_BASE64" | base64 -d > "$keystore"
-          test -s "$keystore"
-          # 只接受 JKS(fe ed fe ed) 或 PKCS12(30 82) 容器，最终以 keytool 能否打开为准
-          if ! head -c 4 "$keystore" | od -An -tx1 | grep -Eq 'fe ed fe ed|30 82'; then
-            echo "::error::CODEXHOST_MOBILE_KEYSTORE_BASE64 不是有效的 Java keystore，请确认 base64 -w0 的完整输出" >&2
-            exit 1
-          fi
-          # 用 stdin 提供口令，避免口令出现在进程参数里
-          listing="$(printf '%s\n' "$CODEXHOST_MOBILE_STORE_PASSWORD" \
-            | keytool -list -v -keystore "$keystore" 2>/dev/null || true)"
-          if [[ -z "$listing" ]]; then
-            echo "::error::无法用 CODEXHOST_MOBILE_STORE_PASSWORD 打开 keystore，请检查密钥口令" >&2
-            exit 1
-          fi
-          if ! grep -Fq "Alias name: $CODEXHOST_MOBILE_KEY_ALIAS" <<<"$listing"; then
-            echo "::error::keystore 中不存在别名 $CODEXHOST_MOBILE_KEY_ALIAS，请检查 CODEXHOST_MOBILE_KEY_ALIAS" >&2
-            exit 1
-          fi
-          echo "ANDROID_KEYSTORE_PATH=$keystore" >> "$GITHUB_ENV"
 
       - name: Harden and test embedded Android project
         working-directory: pakeplus
@@ -827,7 +635,7 @@ jobs:
               private val emit: (String, Int?, String?) -> Unit,
           ) {
               private val allowedPrefix =
-                  "https://github.com/unlgame/codexhost-mobile/releases/download/"
+                  "https://github.com/shaunsheepzzz/codexhost-mobile/releases/download/"
               private val allowedRedirectHosts = setOf(
                   "github.com",
                   "objects.githubusercontent.com",
@@ -957,153 +765,15 @@ jobs:
           if version_code_count != 1 or version_name_count != 1:
               raise SystemExit("Pinned PakePlus version fields changed")
 
-          # ---- Release signing configuration (secrets never reach this file) ----
-          # The keystore lives in $RUNNER_TEMP and is referenced only through
-          # environment variable *names*, so no password is written to disk.
-          signing_config_name = "codexhost"
-          signing_entry_lines = [
-              f'create("{signing_config_name}") {{',
-              '    storeFile = file(System.getenv("ANDROID_KEYSTORE_PATH") ?: "")',
-              '    storePassword = System.getenv("CODEXHOST_MOBILE_STORE_PASSWORD")',
-              '    keyAlias = System.getenv("CODEXHOST_MOBILE_KEY_ALIAS")',
-              '    keyPassword = System.getenv("CODEXHOST_MOBILE_KEY_PASSWORD")',
-              '}',
-          ]
-          signing_assignment = (
-              f'signingConfig = signingConfigs.getByName("{signing_config_name}")'
-          )
-
-          def skip_literal(source, index):
-              quote = source[index:index + 3]
-              if quote in ('"""', "'''"):
-                  closing = source.find(quote, index + 3)
-                  if closing < 0:
-                      raise SystemExit("Unterminated string literal in build.gradle.kts")
-                  return closing + 3
-              quote = source[index]
-              index += 1
-              while index < len(source):
-                  char = source[index]
-                  if char == "\\":
-                      index += 2
-                      continue
-                  if char == quote:
-                      return index + 1
-                  if char == "\n":
-                      raise SystemExit("Unterminated string literal in build.gradle.kts")
-                  index += 1
-              raise SystemExit("Unterminated string literal in build.gradle.kts")
-
-          def block_end(source, brace_index):
-              depth = 0
-              index = brace_index
-              while index < len(source):
-                  char = source[index]
-                  if char in "\"'":
-                      index = skip_literal(source, index)
-                      continue
-                  if char == "/" and source[index + 1:index + 2] == "/":
-                      newline = source.find("\n", index)
-                      index = len(source) if newline < 0 else newline
-                      continue
-                  if char == "{":
-                      depth += 1
-                  elif char == "}":
-                      depth -= 1
-                      if depth == 0:
-                          return index + 1
-                  index += 1
-              raise SystemExit("Unbalanced braces in build.gradle.kts")
-
-          signing_configs_match = re.search(
-              r"(?m)^[ \t]*signingConfigs\s*\{", gradle_source
-          )
-          if signing_configs_match is None:
-              android_match = re.search(
-                  r"(?m)^[ \t]*android\s*\{", gradle_source
-              )
-              if android_match is None:
-                  raise SystemExit("Pinned PakePlus android block is missing")
-              brace = gradle_source.index("{", android_match.start())
-              line_end = gradle_source.index("\n", brace)
-              indent = re.match(
-                  r"[ \t]*", gradle_source[android_match.start():]
-              ).group(0)
-              injected = "\n".join(
-                  [f"{indent}signingConfigs {{"]
-                  + [f"{indent}    {line}" for line in signing_entry_lines]
-                  + [f"{indent}}}"]
-              )
-              gradle_source = (
-                  gradle_source[:line_end + 1]
-                  + injected
-                  + "\n"
-                  + gradle_source[line_end + 1:]
-              )
-          else:
-              if f'create("{signing_config_name}")' in gradle_source:
-                  raise SystemExit("Release signing config already injected")
-              brace = gradle_source.index("{", signing_configs_match.start())
-              closing = block_end(gradle_source, brace) - 1
-              indent = re.match(
-                  r"[ \t]*", gradle_source[signing_configs_match.start():]
-              ).group(0)
-              injected = "\n".join(
-                  [f"{indent}    {line}" for line in signing_entry_lines]
-              )
-              gradle_source = (
-                  gradle_source[:closing]
-                  + injected
-                  + "\n"
-                  + indent
-                  + gradle_source[closing:]
-              )
-
-          build_types_match = re.search(
-              r"(?m)^[ \t]*buildTypes\s*\{", gradle_source
-          )
-          if build_types_match is None:
-              raise SystemExit("Pinned PakePlus buildTypes block is missing")
-          build_types_brace = gradle_source.index("{", build_types_match.start())
-          build_types_end = block_end(gradle_source, build_types_brace)
-          build_types_body = gradle_source[build_types_brace + 1:build_types_end - 1]
-          release_match = re.search(r"(?m)^([ \t]*)release\s*\{", build_types_body)
-          if release_match is None:
-              raise SystemExit("Pinned PakePlus release build type is missing")
-          release_brace = build_types_body.index("{", release_match.start())
-          release_end = block_end(build_types_body, release_brace)
-          release_body = build_types_body[release_brace + 1:release_end - 1]
-          release_indent = release_match.group(1) + "    "
-          release_body, signing_replaced = re.subn(
-              r"(?m)^[ \t]*signingConfig\s*=.*$",
-              release_indent + signing_assignment,
-              release_body,
-              count=1,
-          )
-          if signing_replaced != 1:
-              release_body = (
-                  "\n"
-                  + release_indent
-                  + signing_assignment
-                  + release_body
-              )
-          build_types_body = (
-              build_types_body[:release_brace + 1]
-              + release_body
-              + build_types_body[release_end - 1:]
-          )
-          gradle_source = (
-              gradle_source[:build_types_brace + 1]
-              + build_types_body
-              + gradle_source[build_types_end - 1:]
-          )
-
-          if gradle_source.count(f'getByName("{signing_config_name}")') != 1:
-              raise SystemExit(
-                  "Release signing configuration was not applied exactly once"
-              )
-          if "CODEXHOST_MOBILE_STORE_PASSWORD" not in gradle_source:
-              raise SystemExit("Release signing configuration was not injected")
+          # CI must never sign with the public PakePlus template identity.
+          signing_block = re.compile(r'(?ms)^    signingConfigs \{.*?^    \}\n')
+          gradle_source, removed = signing_block.subn('', gradle_source)
+          if removed != 1:
+              raise SystemExit("Pinned PakePlus signing block changed")
+          gradle_source = re.sub(r'(?m)^\s*signingConfig = .*\n', '', gradle_source)
+          if 'signingConfig' in gradle_source:
+              raise SystemExit("Unexpected remaining signing configuration")
+          Path("pakeplus.keystore").unlink(missing_ok=True)
           gradle_path.write_text(gradle_source)
           PY
           test -s app/src/main/assets/index.html
@@ -1130,7 +800,7 @@ jobs:
           grep -Fq 'MessageDigest.getInstance("SHA-256")' \
             app/src/main/java/com/app/pakeplus/AppUpdater.kt
           grep -Fq \
-            'https://github.com/unlgame/codexhost-mobile/releases/download/' \
+            'https://github.com/shaunsheepzzz/codexhost-mobile/releases/download/' \
             app/src/main/java/com/app/pakeplus/AppUpdater.kt
           grep -Fq 'canRequestPackageInstalls' \
             app/src/main/java/com/app/pakeplus/AppUpdater.kt
@@ -1142,16 +812,6 @@ jobs:
           grep -Fq "applicationId = \"$APP_ID\"" app/build.gradle.kts
           grep -Fq "versionCode = $APP_VERSION_CODE" app/build.gradle.kts
           grep -Fq "versionName = \"$APP_VERSION\"" app/build.gradle.kts
-          grep -Fq 'storeFile = file(System.getenv("ANDROID_KEYSTORE_PATH")' \
-            app/build.gradle.kts
-          grep -Fq 'storePassword = System.getenv("CODEXHOST_MOBILE_STORE_PASSWORD")' \
-            app/build.gradle.kts
-          grep -Fq 'keyAlias = System.getenv("CODEXHOST_MOBILE_KEY_ALIAS")' \
-            app/build.gradle.kts
-          grep -Fq 'keyPassword = System.getenv("CODEXHOST_MOBILE_KEY_PASSWORD")' \
-            app/build.gradle.kts
-          grep -Fq 'signingConfig = signingConfigs.getByName("codexhost")' \
-            app/build.gradle.kts
           grep -Fq 'CodexHostMobile-update.apk' \
             app/src/main/java/com/app/pakeplus/AppUpdater.kt
           # AppUpdater.kt 里存的是「正则字面量」而不是真实版本号，所以这里必须用
@@ -1185,30 +845,26 @@ jobs:
             exit 1
           fi
           node "$RUNNER_TEMP/scan-mobile-assets.cjs" app/src/main/assets
-          test -s pakeplus.keystore
+          test ! -e pakeplus.keystore
+
+      - name: Apply Android client certificate support
+        run: python3 scripts/apply-android-mtls.py pakeplus
+
+      - name: Test Android client certificate support
+        working-directory: pakeplus
+        run: |
+          chmod +x ./gradlew
+          ./gradlew testReleaseUnitTest --no-daemon
 
       - name: Build release APK
         working-directory: pakeplus
-        shell: bash
-        env:
-          CODEXHOST_MOBILE_KEYSTORE_BASE64: ${{ secrets.CODEXHOST_MOBILE_KEYSTORE_BASE64 }}
-          CODEXHOST_MOBILE_STORE_PASSWORD: ${{ secrets.CODEXHOST_MOBILE_STORE_PASSWORD }}
-          CODEXHOST_MOBILE_KEY_ALIAS: ${{ secrets.CODEXHOST_MOBILE_KEY_ALIAS }}
-          CODEXHOST_MOBILE_KEY_PASSWORD: ${{ secrets.CODEXHOST_MOBILE_KEY_PASSWORD }}
         run: |
-          set -euo pipefail
-          if [[ -z "${ANDROID_KEYSTORE_PATH:-}" || ! -s "$ANDROID_KEYSTORE_PATH" ]]; then
-            echo "::error::release keystore 缺失，请先运行 Decode release signing keystore 步骤；请在仓库 Settings → Secrets and variables → Actions 配置 CODEXHOST_MOBILE_KEYSTORE_BASE64 / CODEXHOST_MOBILE_STORE_PASSWORD / CODEXHOST_MOBILE_KEY_ALIAS / CODEXHOST_MOBILE_KEY_PASSWORD" >&2
-            exit 1
-          fi
-          chmod +x ./gradlew
           ./gradlew assembleRelease --no-daemon
-          test -s app/build/outputs/apk/release/app-release.apk
+          test -s app/build/outputs/apk/release/app-release-unsigned.apk
+
       - name: Prepare and verify APK
         working-directory: pakeplus
         shell: bash
-        env:
-          CODEXHOST_MOBILE_KEY_ALIAS: ${{ secrets.CODEXHOST_MOBILE_KEY_ALIAS }}
         run: |
           set -euo pipefail
           # 本步骤大量断言是 grep -q / test -s / test -x：匹配不上时它们只会安静地以
@@ -1216,11 +872,11 @@ jobs:
           # 连同行号打出来，否则一次静默失败的排查成本极高。
           trap 'echo "::error::Prepare and verify APK failed at line $LINENO: $BASH_COMMAND" >&2' ERR
           mkdir -p "$RUNNER_TEMP/apk"
-          artifact="$RUNNER_TEMP/apk/CodexHostMobile-v${APP_VERSION}.apk"
+          artifact="$RUNNER_TEMP/apk/app-release-unsigned.apk"
           listing="$RUNNER_TEMP/apk/CodexHostMobile-contents.txt"
           final_manifest="$RUNNER_TEMP/apk/CodexHostMobile-manifest.xml"
           unpacked_assets="$RUNNER_TEMP/apk/CodexHostMobile-unpacked-assets"
-          cp app/build/outputs/apk/release/app-release.apk "$artifact"
+          cp app/build/outputs/apk/release/app-release-unsigned.apk "$artifact"
           test -s "$artifact"
           unzip -l "$artifact" > "$listing"
           grep -Fq 'assets/index.html' "$listing"
@@ -1281,159 +937,19 @@ jobs:
           mkdir -p "$unpacked_assets"
           unzip -q "$artifact" 'assets/*' -d "$unpacked_assets"
           node "$RUNNER_TEMP/scan-mobile-assets.cjs" "$unpacked_assets/assets"
-          # ---- release 签名校验：必须是 release 签名，且证书主题包含预期 alias ----
           apksigner="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)"
-          test -x "$apksigner"
-          "$apksigner" verify "$artifact"
-          certs="$RUNNER_TEMP/apk/CodexHostMobile-signer-certs.txt"
-          "$apksigner" verify --print-certs "$artifact" > "$certs"
-          # 签名证书信息是 release 关口的审计凭据，本来就不该静默：直接打出来，
-          # 之后无论是断言失败还是只想确认签的是哪把钥匙，日志里都有。
-          cat "$certs"
-          # 只认 "certificate DN:" 这个稳定锚点。build-tools 34.0.0 的 --print-certs 输出的是
-          # "V2 Signer: certificate DN: ..."，早期版本才是 "Signer #1 certificate DN: ..."；
-          # 前缀随签名方案和工具版本变化，硬匹配它只会让 grep 静默失败、整个步骤零输出结束。
-          signer_dn="$(grep -Eim1 'certificate[[:space:]]+DN[[:space:]]*:' "$certs" \
-            | sed -E 's/^.*certificate[[:space:]]+DN[[:space:]]*:[[:space:]]*//' | tr -d '\r')"
-          if [[ -z "$signer_dn" ]]; then
-            echo "::error::无法从 apksigner --print-certs 输出解析签名证书主题；上面是完整输出" >&2
+          if "$apksigner" verify "$artifact" >/dev/null 2>&1; then
+            echo "Unexpected signed APK in unsigned CI build" >&2
             exit 1
           fi
-          # 同一个签名者会按 V2/V3 方案重复出现，所以比的是去重后的 DN 数量。
-          distinct_dn="$(grep -Ei 'certificate[[:space:]]+DN[[:space:]]*:' "$certs" \
-            | sed -E 's/^.*certificate[[:space:]]+DN[[:space:]]*:[[:space:]]*//' | tr -d '\r' \
-            | sort -u | wc -l)"
-          if [[ "$distinct_dn" -ne 1 ]]; then
-            echo "::error::APK 存在多个签名证书（共 ${distinct_dn} 个），请确认 keystore 只包含一个签名证书" >&2
-            exit 1
-          fi
-          # GitHub Actions 对 secret 做日志打码，别再把 alias 回显到日志里。
-          if [[ "$signer_dn" != *"$CODEXHOST_MOBILE_KEY_ALIAS"* ]]; then
-            echo "::error::APK 签名证书主题不包含预期 alias，请核对 CODEXHOST_MOBILE_KEY_ALIAS 与 keystore" >&2
-            exit 1
-          fi
-          if grep -Eqi 'CN=Android[[:space:]]+Debug' "$certs"; then
-            echo "::error::APK 仍使用 debug 签名，请检查 signingConfigs 注入" >&2
-            exit 1
-          fi
-          (
-            cd "$RUNNER_TEMP/apk"
-            sha256sum "CodexHostMobile-v${APP_VERSION}.apk" \
-              > "CodexHostMobile-v${APP_VERSION}.apk.sha256"
-          )
-          cat "$artifact.sha256"
+          (cd "$RUNNER_TEMP/apk" && sha256sum app-release-unsigned.apk > app-release-unsigned.apk.sha256)
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CodexHostMobile-android
+          name: CodexHostMobile-android-unsigned
           path: |
-            ${{ runner.temp }}/apk/CodexHostMobile-v${{ env.APP_VERSION }}.apk
-            ${{ runner.temp }}/apk/CodexHostMobile-v${{ env.APP_VERSION }}.apk.sha256
+            ${{ runner.temp }}/apk/app-release-unsigned.apk
+            ${{ runner.temp }}/apk/app-release-unsigned.apk.sha256
           if-no-files-found: error
           retention-days: 7
-
-  ios:
-    name: Build Codex Host Mobile iOS
-    needs: version
-    if: needs.version.outputs.build_ios == 'true'
-    uses: ./.github/workflows/build-ios.yml
-    with:
-      app_version: ${{ needs.version.outputs.app_version }}
-
-  npm:
-    name: Publish codexhost-mobile npm package
-    needs: version
-    if: needs.version.outputs.publish_npm == 'true'
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/publish-npm.yml
-    with:
-      app_version: ${{ needs.version.outputs.app_version }}
-
-  release:
-    name: Publish CodexHostMobile Release
-    if: >-
-      always() &&
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main' &&
-      needs.version.result == 'success' &&
-      needs.build.result == 'success' &&
-      (
-        needs.ios.result == 'success' ||
-        (
-          needs.version.outputs.build_ios == 'false' &&
-          needs.ios.result == 'skipped'
-        )
-      )
-    needs:
-      - version
-      - build
-      - ios
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Download verified APK
-        uses: actions/download-artifact@v4
-        with:
-          name: CodexHostMobile-android
-          path: release
-
-      - name: Download verified unsigned IPA
-        if: needs.version.outputs.build_ios == 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: CodexHostMobile-ios-unsigned
-          path: release
-
-      - name: Publish GitHub Release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          APP_VERSION: ${{ needs.version.outputs.app_version }}
-          RELEASE_TAG: ${{ needs.version.outputs.release_tag }}
-          IOS_BUILD_ENABLED: ${{ needs.version.outputs.build_ios }}
-        run: |
-          set -euo pipefail
-          apk="release/CodexHostMobile-v${APP_VERSION}.apk"
-          apk_checksum="${apk}.sha256"
-          ipa="release/CodexHostMobile-v${APP_VERSION}-unsigned.ipa"
-          ipa_checksum="${ipa}.sha256"
-          test -s "$apk"
-          test -s "$apk_checksum"
-          (
-            cd release
-            sha256sum --check "CodexHostMobile-v${APP_VERSION}.apk.sha256"
-          )
-          release_assets=("$apk" "$apk_checksum")
-          if [[ "$IOS_BUILD_ENABLED" == "true" ]]; then
-            test -s "$ipa"
-            test -s "$ipa_checksum"
-            (
-              cd release
-              sha256sum --check \
-                "CodexHostMobile-v${APP_VERSION}-unsigned.ipa.sha256"
-            )
-            release_assets+=("$ipa" "$ipa_checksum")
-          fi
-          cleanup_draft() {
-            gh release delete "$RELEASE_TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --cleanup-tag \
-              --yes || true
-          }
-          trap cleanup_draft ERR INT TERM
-          gh release create "$RELEASE_TAG" \
-            "${release_assets[@]}" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "Codex Host Mobile $RELEASE_TAG" \
-            --generate-notes \
-            --draft
-          gh release edit "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --draft=false \
-            --latest
-          trap - ERR INT TERM

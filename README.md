@@ -1,5 +1,7 @@
 # codexhost-mobile
 
+> 本分支为 `Codex Mobile mTLS`：独立包名、系统客户端证书、仅手动生成未签名安卓包，下载后本机签名。当前流程见 [Fork](docs/FORK.md)、[mTLS](docs/android-mtls.md) 与 [签名](docs/android-signing.md)。下方原上游发布说明仅供历史参考。
+
 [![Build CodexHostMobile Android APK](https://github.com/unlgame/codexhost-mobile/actions/workflows/build-android.yml/badge.svg)](https://github.com/unlgame/codexhost-mobile/actions/workflows/build-android.yml)
 [![Secret Guard](https://github.com/unlgame/codexhost-mobile/actions/workflows/secret-guard.yml/badge.svg)](https://github.com/unlgame/codexhost-mobile/actions/workflows/secret-guard.yml)
 [![Build CodexHostMobile iOS App](https://github.com/unlgame/codexhost-mobile/actions/workflows/build-ios.yml/badge.svg)](https://github.com/unlgame/codexhost-mobile/actions/workflows/build-ios.yml)

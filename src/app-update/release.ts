@@ -1,7 +1,7 @@
-export const APP_UPDATE_REPOSITORY = "unlgame/codexhost-mobile";
+export const APP_UPDATE_REPOSITORY = "shaunsheepzzz/codexhost-mobile";
 export const APP_UPDATE_API_URL =
-  "https://api.github.com/repos/unlgame/codexhost-mobile/releases/latest";
-export const APP_UPDATE_CACHE_KEY = "codexhost-mobile:app-update:last-release";
+  "https://api.github.com/repos/shaunsheepzzz/codexhost-mobile/releases/latest";
+export const APP_UPDATE_CACHE_KEY = "codexhost-mobile-mtls:app-update:last-release";
 
 export interface SemanticVersion {
   major: number;
